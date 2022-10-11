@@ -1,5 +1,28 @@
-use tcod::colors::*;
 use tcod::console::*;
+use tcod::colors::*;
+
+struct Object {
+    x: i32,
+    y: i32,
+    char: char,
+    color: Color,
+}
+
+impl Object {
+    pub fn new(x: i32, y: i32, char: char, color: Color) -> Self {
+        Object { x, y, char, color }
+    }
+
+    pub fn move_by(&mut self, dx: i32, dy: i32) {
+        self.x += dx;
+        self.y += dy;
+    }
+
+    pub fn draw(&self, con: &mut dyn Console) {
+        con.set_default_foreground (self.color);
+        con.put_char(self.x, self.y, self.char, BackgroundFlag::None);
+    }
+}
 
 // actual size of the window
 const SCREEN_WIDTH: i32 = 80;
@@ -11,7 +34,7 @@ struct Tcod {
     con: Offscreen,
 }
 
-fn handle_keys(tcod: &mut Tcod, player_x: &mut i32, player_y: &mut i32) -> bool {
+fn handle_keys(tcod: &mut Tcod, player: &mut Object) -> bool {
 
     use tcod::input::Key;
     use tcod::input::KeyCode::*;
@@ -30,10 +53,10 @@ fn handle_keys(tcod: &mut Tcod, player_x: &mut i32, player_y: &mut i32) -> bool 
             }
             Key { code: Escape, .. } => return true, // exit game
 
-            Key { code: Up, .. } => *player_y -= 1,
-            Key { code: Down, .. } => *player_y += 1,
-            Key { code: Left, .. } => *player_x -= 1,
-            Key { code: Right, .. } => *player_x += 1,
+            Key { code: Up, .. } => player.move_by(0, -1),
+            Key { code: Down, .. } => player.move_by(0, 1),
+            Key { code: Left, .. } => player.move_by(-1, 0),
+            Key { code: Right, .. } => player.move_by(1, 0),
             _ => {}
         }
     }
@@ -52,13 +75,20 @@ fn main() {
     let mut tcod = Tcod { root, con };
     tcod::system::set_fps(LIMIT_FPS);
 
-    let mut player_x = SCREEN_WIDTH / 2;
-    let mut player_y = SCREEN_HEIGHT / 2;
+    const START_X: i32 = SCREEN_WIDTH / 2;
+    const START_Y: i32 = SCREEN_HEIGHT / 2;
+
+    let player = Object::new(START_X, START_Y, '@', WHITE);
+    let npc = Object::new(START_X - 5, START_Y, '@', YELLOW);
+
+    let mut objects = [player, npc];
 
     while !tcod.root.window_closed() {
-        tcod.con.set_default_foreground(WHITE);
         tcod.con.clear();
-        tcod.con.put_char(player_x, player_y, '@', BackgroundFlag::None);
+
+        for object in &objects {
+            object.draw(&mut tcod.con);
+        }
 
         // blit the contents of "con" to the root console and present it
         blit(
@@ -73,8 +103,10 @@ fn main() {
 
         tcod.root.flush();
         tcod.root.wait_for_keypress(true);
+
+        let player = &mut objects[0];
         // handle keys and exit game if needed
-        let exit = handle_keys(&mut tcod, &mut player_x, &mut player_y);
+        let exit = handle_keys(&mut tcod, player);
         if exit {
             break;
         }
