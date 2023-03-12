@@ -171,7 +171,27 @@ impl Object {
             objects[id].set_pos(x + dx, y + dy);
         }
     }
-
+    fn player_move_or_attack(dx: i32, dy: i32, game: &Game, objects: &mut [Object]) {
+        // the coordinates the player is moving to/attacking
+        let x = objects[PLAYER].x + dx;
+        let y = objects[PLAYER].y + dy;
+    
+        // try to find an attackable object there
+        let target_id = objects.iter().position(|object| object.pos() == (x, y));
+    
+        // attack if target found, move otherwise
+        match target_id {
+            Some(target_id) => {
+                println!(
+                    "The {} laughs at your puny efforts to attack him!",
+                    objects[target_id].name
+                );
+            }
+            None => {
+                Self::move_by(PLAYER, dx, dy, &game.map, objects);
+            }
+        }
+    }
     pub fn pos(&self) -> (i32, i32) {
         (self.x, self.y)
     }
@@ -348,7 +368,6 @@ fn handle_keys(tcod: &mut Tcod, game: &Game, objects: &mut Vec<Object>) -> Playe
     
     let key = tcod.root.wait_for_keypress(true);
     let player_alive = objects[PLAYER].alive;
-    let map = &game.map;
     match (key, key.text(), player_alive) {
         (
             Key {
@@ -367,19 +386,20 @@ fn handle_keys(tcod: &mut Tcod, game: &Game, objects: &mut Vec<Object>) -> Playe
         (Key { code: Escape, .. }, _, _) => return Exit, // exit game
 
         (Key { code: Up, .. }, _, true) => {
-            Object::move_by(PLAYER, 0, -1, &map, objects);
+            
+            Object::player_move_or_attack(0, -1, game, objects);
             return TookTurn
         }
         (Key { code: Down, .. }, _, true)  => {
-            Object::move_by(PLAYER, 0, 1, &map, objects);
+            Object::player_move_or_attack(0, 1, game, objects);
             return TookTurn
         }
         (Key { code: Left, .. }, _, true)  => {
-            Object::move_by(PLAYER, -1, 0, &map, objects);
+            Object::player_move_or_attack(-1, 0, game, objects);
             return TookTurn
         }
         (Key { code: Right, .. }, _, true)  => {
-            Object::move_by(PLAYER, 1, 0, &map, objects);
+            Object::player_move_or_attack(1, 0, game, objects);
             return TookTurn
         }
         _ => return DidntTakeTurn,
@@ -436,6 +456,16 @@ fn main() {
         let player_action = handle_keys(&mut tcod, &game, &mut objects);
         if player_action == PlayerAction::Exit {
             break;
+        }
+
+        // let monsters take their turn
+        if objects[PLAYER].alive && player_action != PlayerAction::DidntTakeTurn {
+            for object in &objects {
+                // only if object is not player
+                if (object as *const _) != (&objects[PLAYER] as *const _) {
+                    println!("The {} acts.", object.name);
+                }
+            }
         }
     }
 }
