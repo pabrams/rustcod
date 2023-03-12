@@ -101,6 +101,13 @@ fn is_blocked(x: i32, y: i32, map: &Map, objects: &[Object]) -> bool {
         .any(|object| object.blocks && object.pos() == (x, y))
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum PlayerAction {
+    TookTurn,
+    DidntTakeTurn,
+    Exit,
+}
+
 /// A rectangle on the map, used to characterise a room.
 #[derive(Clone, Copy, Debug)]
 struct Rect {
@@ -143,7 +150,7 @@ struct Object {
     color: Color,
     name: String,  
     blocks: bool,  
-    // alive: bool,  
+    alive: bool,  
 }
 
 impl Object {
@@ -155,7 +162,7 @@ impl Object {
             color: color,
             name: name.into(),
             blocks: blocks,
-            // alive: false,
+            alive: false,
         }
     }
     fn move_by(id: usize, dx: i32, dy: i32, map: &Map, objects: &mut [Object]) {
@@ -237,7 +244,7 @@ fn make_map(objects: &mut Vec<Object>) -> Map {
                 // all rooms after the first:
 
                 // add some content to this room, such as monsters
-                place_objects(new_room, objects);
+                place_objects(new_room, &map, objects);
                 // connect it to the previous room with a tunnel
                 // center coordinates of the previous room
                 let (prev_x, prev_y) = rooms[rooms.len() - 1].center();
@@ -259,7 +266,7 @@ fn make_map(objects: &mut Vec<Object>) -> Map {
     map
 }
 
-fn place_objects(room: Rect, objects: &mut Vec<Object>) {
+fn place_objects(room: Rect, map: &Map, objects: &mut Vec<Object>) {
     // choose random number of monsters
     let num_monsters = rand::thread_rng().gen_range(0, MAX_ROOM_MONSTERS + 1);
 
@@ -267,15 +274,18 @@ fn place_objects(room: Rect, objects: &mut Vec<Object>) {
         // choose random spot for this monster
         let x = rand::thread_rng().gen_range(room.x1 + 1, room.x2);
         let y = rand::thread_rng().gen_range(room.y1 + 1, room.y2);
+        if !is_blocked(x, y, map, objects) {
+            let mut monster = if rand::random::<f32>() < 0.8 {
+                // create an orc
+                Object::new(x, y, 'o', "orc", DESATURATED_GREEN, true)
+            } else {
+                // create a troll
+                Object::new(x, y, 'T', "troll", DARKER_GREEN, true)
+            };
 
-        let monster = if rand::random::<f32>() < 0.8 {  // 80% chance of getting an orc
-            // create an orc
-            Object::new(x, y, 'o', "orc", DESATURATED_GREEN, true)
-        } else {
-            Object::new(x, y, 'T', "troll", DARKER_GREEN, true)
-        };
-
-        objects.push(monster);
+            monster.alive = true;
+            objects.push(monster);
+        }
     }
 }
 
@@ -331,32 +341,50 @@ fn render(tcod: &mut Tcod, game: &mut Game, objects: &[Object], fov_recompute: b
     );
 }
 
-fn handle_keys(tcod: &mut Tcod, game: &Game, objects: &mut Vec<Object>) -> bool {
+fn handle_keys(tcod: &mut Tcod, game: &Game, objects: &mut Vec<Object>) -> PlayerAction {
     use tcod::input::Key;
     use tcod::input::KeyCode::*;
+    use PlayerAction::*;
     
     let key = tcod.root.wait_for_keypress(true);
-    match key {
-        Key {
-            code: Enter,
-            alt: true,
-            ..
-        } => {
+    let player_alive = objects[PLAYER].alive;
+    let map = &game.map;
+    match (key, key.text(), player_alive) {
+        (
+            Key {
+                code: Enter,
+                alt: true,
+                ..
+            },
+            _, 
+            _, 
+        ) => {
             // Alt+Enter: toggle fullscreen
             let fullscreen = tcod.root.is_fullscreen();
             tcod.root.set_fullscreen(!fullscreen);
+            return DidntTakeTurn
         }
-        Key { code: Escape, .. } => return true, // exit game
+        (Key { code: Escape, .. }, _, _) => return Exit, // exit game
 
-        Key { code: Up, .. } => Object::move_by(PLAYER, 0, -1, &game.map, objects),
-        Key { code: Down, .. } => Object::move_by(PLAYER, 0, 1, &game.map, objects),
-        Key { code: Left, .. } => Object::move_by(PLAYER, -1, 0, &game.map, objects),
-        Key { code: Right, .. } => Object::move_by(PLAYER, 1, 0, &game.map, objects),
-        _ => {}
+        (Key { code: Up, .. }, _, true) => {
+            Object::move_by(PLAYER, 0, -1, &map, objects);
+            return TookTurn
+        }
+        (Key { code: Down, .. }, _, true)  => {
+            Object::move_by(PLAYER, 0, 1, &map, objects);
+            return TookTurn
+        }
+        (Key { code: Left, .. }, _, true)  => {
+            Object::move_by(PLAYER, -1, 0, &map, objects);
+            return TookTurn
+        }
+        (Key { code: Right, .. }, _, true)  => {
+            Object::move_by(PLAYER, 1, 0, &map, objects);
+            return TookTurn
+        }
+        _ => return DidntTakeTurn,
     }
-    false
 }
-
 
 fn main() {
 
@@ -373,10 +401,8 @@ fn main() {
     let fov = FovMap::new(MAP_WIDTH, MAP_HEIGHT);
     let mut tcod = Tcod { root, con, fov };
 
-    // const START_X: i32 = SCREEN_WIDTH / 2;
-    // const START_Y: i32 = SCREEN_HEIGHT / 2;
-
-    let player = Object::new(0, 0, '@', "player", WHITE, true);
+    let mut player = Object::new(0, 0, '@', "player", WHITE, true);
+    player.alive = true;
 
     // the list of objects with just the player
     let mut objects = vec![player];
@@ -405,12 +431,10 @@ fn main() {
         let fov_recompute = previous_player_position != (objects[PLAYER].x, objects[PLAYER].y);
         render(&mut tcod, &mut game, &objects, fov_recompute);
         tcod.root.flush();
-        let player = &mut objects[PLAYER];
 
-        previous_player_position = (player.x, player.y);
-        // handle keys and exit game if needed
-        let exit = handle_keys(&mut tcod, &game, &mut objects);
-        if exit {
+        previous_player_position = objects[PLAYER].pos();
+        let player_action = handle_keys(&mut tcod, &game, &mut objects);
+        if player_action == PlayerAction::Exit {
             break;
         }
     }
