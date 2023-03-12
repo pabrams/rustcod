@@ -89,6 +89,18 @@ impl Tile {
     }
 }
 
+// Test whether a Tile at the given coordinates is blocked.
+fn is_blocked(x: i32, y: i32, map: &Map, objects: &[Object]) -> bool {
+    // first test the map tile
+    if map[x as usize][y as usize].blocked {
+        return true;
+    }
+    // now check for any blocking objects
+    objects
+        .iter()
+        .any(|object| object.blocks && object.pos() == (x, y))
+}
+
 /// A rectangle on the map, used to characterise a room.
 #[derive(Clone, Copy, Debug)]
 struct Rect {
@@ -123,31 +135,39 @@ impl Rect {
     }
 }
 
-#[derive(Debug)]
+// #[derive(Debug)]
 struct Object {
     x: i32,
     y: i32,
     char: char,
     color: Color,
+    name: String,  
+    blocks: bool,  
+    // alive: bool,  
 }
 
 impl Object {
-    pub fn new(x: i32, y: i32, char: char, color: Color) -> Self {
-        Object { x, y, char, color }
+    pub fn new(x: i32, y: i32, char: char, name: &str, color: Color, blocks: bool) -> Self {
+        Object {
+            x: x,
+            y: y,
+            char: char,
+            color: color,
+            name: name.into(),
+            blocks: blocks,
+            // alive: false,
+        }
     }
-
-    // move by the given amount, if the destination is not blocked
-    pub fn move_by(&mut self, dx: i32, dy: i32, game: &Game) {
-        if !game.map[(self.x + dx) as usize][(self.y + dy) as usize].blocked {  
-            self.set_pos(self.x + dx, self.y + dy);
-            // self.x += dx;
-            // self.y += dy;
+    fn move_by(id: usize, dx: i32, dy: i32, map: &Map, objects: &mut [Object]) {
+        let (x, y) = objects[id].pos();
+        if !is_blocked(x + dx, y + dy, map, objects) {
+            objects[id].set_pos(x + dx, y + dy);
         }
     }
 
-    // pub fn pos(&self) -> (i32, i32) {
-    //     (self.x, self.y)
-    // }
+    pub fn pos(&self) -> (i32, i32) {
+        (self.x, self.y)
+    }
     
     pub fn set_pos(&mut self, x: i32, y: i32) {
         self.x = x;
@@ -250,9 +270,9 @@ fn place_objects(room: Rect, objects: &mut Vec<Object>) {
 
         let monster = if rand::random::<f32>() < 0.8 {  // 80% chance of getting an orc
             // create an orc
-            Object::new(x, y, 'o', DESATURATED_GREEN)
+            Object::new(x, y, 'o', "orc", DESATURATED_GREEN, true)
         } else {
-            Object::new(x, y, 'T', DARKER_GREEN)
+            Object::new(x, y, 'T', "troll", DARKER_GREEN, true)
         };
 
         objects.push(monster);
@@ -311,7 +331,7 @@ fn render(tcod: &mut Tcod, game: &mut Game, objects: &[Object], fov_recompute: b
     );
 }
 
-fn handle_keys(tcod: &mut Tcod, player: &mut Object, game: &Game) -> bool {
+fn handle_keys(tcod: &mut Tcod, game: &Game, objects: &mut Vec<Object>) -> bool {
     use tcod::input::Key;
     use tcod::input::KeyCode::*;
     
@@ -328,10 +348,10 @@ fn handle_keys(tcod: &mut Tcod, player: &mut Object, game: &Game) -> bool {
         }
         Key { code: Escape, .. } => return true, // exit game
 
-        Key { code: Up, .. } => player.move_by(0, -1, game),
-        Key { code: Down, .. } => player.move_by(0, 1, game),
-        Key { code: Left, .. } => player.move_by(-1, 0, game),
-        Key { code: Right, .. } => player.move_by(1, 0, game),
+        Key { code: Up, .. } => Object::move_by(PLAYER, 0, -1, &game.map, objects),
+        Key { code: Down, .. } => Object::move_by(PLAYER, 0, 1, &game.map, objects),
+        Key { code: Left, .. } => Object::move_by(PLAYER, -1, 0, &game.map, objects),
+        Key { code: Right, .. } => Object::move_by(PLAYER, 1, 0, &game.map, objects),
         _ => {}
     }
     false
@@ -356,7 +376,7 @@ fn main() {
     // const START_X: i32 = SCREEN_WIDTH / 2;
     // const START_Y: i32 = SCREEN_HEIGHT / 2;
 
-    let player = Object::new(0, 0, '@', WHITE);
+    let player = Object::new(0, 0, '@', "player", WHITE, true);
 
     // the list of objects with just the player
     let mut objects = vec![player];
@@ -389,7 +409,7 @@ fn main() {
 
         previous_player_position = (player.x, player.y);
         // handle keys and exit game if needed
-        let exit = handle_keys(&mut tcod, player, &game);
+        let exit = handle_keys(&mut tcod, &game, &mut objects);
         if exit {
             break;
         }
