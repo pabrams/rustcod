@@ -10,3 +10,8 @@ You must have rust installed, with cargo in your path.
 1. `cd rustcod`
 1. `cargo build`
 1. `cargo run`
+
+
+## TODO
+
+Stopped in Tutorial at AI heading: https://tomassedovic.github.io/roguelike-tutorial/part-6-going-berserk.html
